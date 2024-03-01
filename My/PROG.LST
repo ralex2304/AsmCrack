@@ -1,0 +1,286 @@
+Turbo Assembler	 Version 4.1	    02/27/24 03:17:57	    Page 1
+prog.asm
+
+
+
+      1	0000			     .model tiny
+      2	0000			     .code
+      3				     .286
+      4				     org 100h
+      5
+      6	      =0080		     MaxPasswdLen    equ 128
+      7
+      8	0100  E9 0090		     Start:	     jmp main
+      9
+     10	0103  0000		     InputPswdHash   dw	0
+     11	0105  ADFF		     CorrectPswdHash dw	0adffh ; Pltrshk
+     12
+     13				     ;--------------------------------------
+     14				     ; Recieves	password from buffer, and calculates it's hash
+     15				     ;
+     16				     ; Entry: di - PasswdInput addr
+     17				     ;
+     18				     ; Destr:	     ax, bx, dx
+     19				     ;--------------------------------------
+     20	0107			     CalcPasswdHash  proc
+     21
+     22	0107			     @@CPHwhileClause:
+     23	0107  80 3D 0D				     cmp byte ptr [di],	0dh ; \n
+     24	010A  74 33				     je	@@CPHendWhile
+     25
+     26						     ; hash calc: crc16
+     27
+     28						     ; data ^= crc&255;
+     29						     ; data ^= data << 4
+     30	010C  8A 05				     mov al, [di]
+     31	010E  32 06 0104r			     xor al, byte ptr [offset InputPswdHash + 1]
+     32	0112  8A E0				     mov ah, al
+     33	0114  C0 E4 04				     shl ah, 4
+     34	0117  32 C4				     xor al, ah
+     35
+     36						     ; t = (((unsigned short)data << 8)	| ((crc>>8)&255));
+     37	0119  33 DB				     xor bx, bx
+     38	011B  33 D2				     xor dx, dx
+     39	011D  8A D8				     mov bl, al
+     40	011F  C1 E3 08				     shl bx, 8
+     41	0122  8A 16 0103r			     mov dl, byte ptr [offset InputPswdHash]
+     42	0126  0B DA				     or	bx, dx
+     43
+     44						     ; t ^= (unsigned char)(data >> 4);
+     45	0128  33 D2				     xor dx, dx
+     46	012A  8A D0				     mov dl, al
+     47	012C  C0 EA 04				     shr dl, 4
+     48	012F  33 DA				     xor bx, dx
+     49
+     50						     ; t ^= ((unsigned short)data << 3);
+     51	0131  32 E4				     xor ah, ah
+     52	0133  C1 E0 03				     shl ax, 3
+     53	0136  33 D8				     xor bx, ax
+     54
+     55	0138  89 1E 0103r			     mov word ptr [offset InputPswdHash], bx
+     56
+     57	013C  47				     inc di
+Turbo Assembler	 Version 4.1	    02/27/24 03:17:57	    Page 2
+prog.asm
+
+
+
+     58	013D  EB C8				     jmp @@CPHwhileClause
+     59	013F			     @@CPHendWhile:
+     60	013F  83 3E 0103r 00			     cmp InputPswdHash,	0
+     61	0144  74 4A				     je	Congrats ; if passwd is	empty, congrats
+     62
+     63	0146  C3				     ret
+     64	0147					     endp
+     65				     ;--------------------------------------
+     66
+     67				     ;--------------------------------------
+     68				     ; Recieves	password from user and checks it
+     69				     ;
+     70				     ; Entry:
+     71				     ;
+     72				     ; Destr:	     ax, bx, dx
+     73				     ; Return:	     cl	= 0/1 -	wrong/right
+     74				     ;--------------------------------------
+     75	0147			     RecievePswd     proc
+     76
+     77	0147  B1 01				     mov cl, 1
+     78
+     79	0149  BF 019Dr				     mov di, offset PasswdInput
+     80	014C  BB 0000				     mov bx, 0
+     81	014F  BA 0000				     mov dx, 0
+     82
+     83	0152			     @@WhileInputBegin:
+     84	0152  B4 08				     mov ah, 08h
+     85	0154  CD 21				     int 21h ; keybd input to al
+     86
+     87	0156  83 FA 7F				     cmp dx, MaxPasswdLen - 1
+     88	0159  77 29				     ja	@@TooManySymbols
+     89
+     90	015B  88 01				     mov [di + bx], al
+     91	015D  43				     inc bx
+     92	015E  42				     inc dx
+     93
+     94						     ; length reset with symbol	8dh
+     95	015F  8A E0				     mov ah, al
+     96	0161  80 E4 7F				     and ah, 01111111b
+     97	0164  80 FC 0D				     cmp ah, 0dh ; \n
+     98	0167  75 03				     jne @@WIBnoReset
+     99
+    100	0169  BA 0000				     mov dx, 0
+    101	016C			     @@WIBnoReset:
+    102	016C  3C 0D				     cmp al, 0dh ; \n
+    103	016E  75 E2				     jne @@WhileInputBegin
+    104
+    105	0170  E8 FF94				     call CalcPasswdHash
+    106
+    107	0173  A1 0105r				     mov ax, CorrectPswdHash
+    108	0176  39 06 0103r			     cmp InputPswdHash,	ax
+    109	017A  74 02				     je	@@RPcorrectPswd
+    110
+    111	017C  B1 00				     mov cl, 0
+    112	017E			     @@RPcorrectPswd:
+    113
+    114						     ; correct ret addr	to skip	PasswdInput data
+Turbo Assembler	 Version 4.1	    02/27/24 03:17:57	    Page 3
+prog.asm
+
+
+
+    115	017E  58				     pop ax
+    116	017F  05 0081				     add ax, MaxPasswdLen + 1
+    117	0182  50				     push ax
+    118
+    119	0183  C3				     ret
+    120
+    121	0184			     @@TooManySymbols:
+    122	0184  B4 09				     mov ah, 09h
+    123	0186  BA 0268r				     mov dx, offset TooLongStr
+    124	0189  CD 21				     int 21h		     ; puts(TooLongStr)
+    125
+    126	018B  B8 4C01				     mov ax, 4c01h
+    127	018E  CD 21				     int 21h		     ; exit(al = 1)
+    128	0190					     endp
+    129				     ;--------------------------------------
+    130
+    131	0190  E9 0090		     Congrats:	     jmp @@CorrectPasswd
+    132
+    133	0193			     main:
+    134	0193  B4 09				     mov ah, 09h
+    135	0195  BA 0235r				     mov dx, offset GreetStr
+    136	0198  CD 21				     int 21h		     ; puts(GreetStr)
+    137
+    138	019A  E8 FFAA				     call RecievePswd ;	rets to	command	after input/fake code field
+    139
+    140	019D			     PasswdInput:    ; fake code (data field)							    +
+    141				     ==========================================================
+    142	019D  80 F9 01				     cmp cl, 1
+    143	01A0  75 06				     jne @@WrongPasswdFake
+    144
+    145	01A2			     @@CorrectPasswdFake:
+    146	01A2  BA 0247r				     mov dx, offset AccessGrantedStr
+    147	01A5  EB 04 90				     jmp @@endifFake
+    148	01A8			     @@WrongPasswdFake:
+    149	01A8  BA 0258r				     mov dx, offset AccessDeniedStr
+    150	01AB			     @@endifFake:
+    151	01AB  B4 09				     mov ah, 09h
+    152	01AD  CD 21				     int 21h
+    153
+    154	01AF  33 DB				     xor bx, bx
+    155	01B1  81 C3 0099			     add bx, 153d
+    156	01B5  C1 EB 02				     shr bx, 2
+    157
+    158	01B8  E8 FF4C				     call CalcPasswdHash
+    159
+    160	01BB  B8 4C00				     mov ax, 4c00h
+    161	01BE  CD 21				     int 21h		     ; exit(al = 0)
+    162
+    163	01C0  6B 74 6F 20 70 72	6F+		     db	"kto prochital,	tot loh"
+    164	      63 68 69 74 61 6C	2C+
+    165	      20 74 6F 74 20 6C	6F+
+    166	      68
+    167
+    168	01D6			     PasswdInputFakeCodeEnd:
+    169	01D6  48*(DE)				     db	(MaxPasswdLen -	(PasswdInputFakeCodeEnd	- PasswdInput) + 1) dup(0deh)
+    170						     ; input/fake code field end						    +
+    171				     =======================================================
+Turbo Assembler	 Version 4.1	    02/27/24 03:17:57	    Page 4
+prog.asm
+
+
+
+    172
+    173	021E  80 F9 01				     cmp cl, 1
+    174	0221  75 06				     jne @@WrongPasswd
+    175	0223			     @@CorrectPasswd:
+    176	0223  BA 0247r				     mov dx, offset AccessGrantedStr
+    177	0226  EB 04 90				     jmp @@endif
+    178	0229			     @@WrongPasswd:
+    179	0229  BA 0258r				     mov dx, offset AccessDeniedStr
+    180	022C			     @@endif:
+    181	022C  B4 09				     mov ah, 09h
+    182	022E  CD 21				     int 21h
+    183
+    184	0230  B8 4C00				     mov ax, 4c00h
+    185	0233  CD 21				     int 21h		     ; exit(al = 0)
+    186
+    187
+    188	0235  45 6E 74 65 72 20	70+  GreetStr	      db "Enter	password:",  0dh, 0ah, "$"
+    189	      61 73 73 77 6F 72	64+
+    190	      3A 0D 0A 24
+    191	0247  41 63 63 65 73 73	20+  AccessGrantedStr db "Access granted",   0dh, 0ah, "$"
+    192	      67 72 61 6E 74 65	64+
+    193	      0D 0A 24
+    194	0258  41 63 63 65 73 73	20+  AccessDeniedStr  db "Access denied",    0dh, 0ah, "$"
+    195	      64 65 6E 69 65 64	0D+
+    196	      0A 24
+    197	0268  54 6F 6F 20 6C 6F	6E+  TooLongStr	      db "Too long input. Samyj	umnij chto li? Prosto tak ne perepolnish. Dumaj	    +
+    198	      67 20 69 6E 70 75	74+  dalshe", 0dh, 0ah,	"$"
+    199	      2E 20 53 61 6D 79	6A+
+    200	      20 75 6D 6E 69 6A	20+
+    201	      63 68 74 6F 20 6C	69+
+    202	      3F 20 50 72 6F 73	74+
+    203	      6F 20 74 61 6B 20	6E+
+    204	      65 20 70 65 72 65	70+
+    205	      6F 6C 6E 69 73 68	2E+
+    206	      20 44 75 6D 61 6A	20+
+    207	      64 61 6C 73 68 65	0D+
+    208	      0A 24
+    209				     end Start
+Turbo Assembler	 Version 4.1	    02/27/24 03:17:57	    Page 5
+Symbol Table
+
+
+
+
+Symbol Name			  Type	 Value
+
+??DATE				  Text	 "02/27/24"
+??FILENAME			  Text	 "prog	  "
+??TIME				  Text	 "03:17:57"
+??VERSION			  Number 040A
+@32BIT				  Text	 0
+@@CORRECTPASSWD			  Near	 DGROUP:0223
+@@CORRECTPASSWDFAKE		  Near	 DGROUP:01A2
+@@CPHENDWHILE			  Near	 DGROUP:013F
+@@CPHWHILECLAUSE		  Near	 DGROUP:0107
+@@ENDIF				  Near	 DGROUP:022C
+@@ENDIFFAKE			  Near	 DGROUP:01AB
+@@RPCORRECTPSWD			  Near	 DGROUP:017E
+@@TOOMANYSYMBOLS		  Near	 DGROUP:0184
+@@WHILEINPUTBEGIN		  Near	 DGROUP:0152
+@@WIBNORESET			  Near	 DGROUP:016C
+@@WRONGPASSWD			  Near	 DGROUP:0229
+@@WRONGPASSWDFAKE		  Near	 DGROUP:01A8
+@CODE				  Text	 DGROUP
+@CODESIZE			  Text	 0
+@CPU				  Text	 0707H
+@CURSEG				  Text	 _TEXT
+@DATA				  Text	 DGROUP
+@DATASIZE			  Text	 0
+@FILENAME			  Text	 PROG
+@INTERFACE			  Text	 000H
+@MODEL				  Text	 1
+@STACK				  Text	 DGROUP
+@WORDSIZE			  Text	 2
+ACCESSDENIEDSTR			  Byte	 DGROUP:0258
+ACCESSGRANTEDSTR		  Byte	 DGROUP:0247
+CALCPASSWDHASH			  Near	 DGROUP:0107
+CONGRATS			  Near	 DGROUP:0190
+CORRECTPSWDHASH			  Word	 DGROUP:0105
+GREETSTR			  Byte	 DGROUP:0235
+INPUTPSWDHASH			  Word	 DGROUP:0103
+MAIN				  Near	 DGROUP:0193
+MAXPASSWDLEN			  Number 0080
+PASSWDINPUT			  Near	 DGROUP:019D
+PASSWDINPUTFAKECODEEND		  Near	 DGROUP:01D6
+RECIEVEPSWD			  Near	 DGROUP:0147
+START				  Near	 DGROUP:0100
+TOOLONGSTR			  Byte	 DGROUP:0268
+
+Groups & Segments		  Bit Size Align  Combine Class
+
+DGROUP				  Group
+  _DATA				  16  0000 Word	  Public  DATA
+  _TEXT				  16  02B7 Word	  Public  CODE
+
