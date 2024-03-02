@@ -4,3 +4,6 @@
 *.COM
 *.drawio*
 decoder
+*.rzdb
+/crack/patcher/main
+/crack/patcher/build

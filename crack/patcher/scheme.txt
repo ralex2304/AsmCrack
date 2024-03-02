@@ -1,0 +1,4 @@
+3866948396          ; chksum
+0111: 17 -> 41      ; call 0x011f -> mov si, 0x01b0 (logical NOT is applied)
+0112: f4 -> 4f
+0113: ff -> fe
